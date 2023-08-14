@@ -8,10 +8,8 @@
 
 <script>
 import {onMounted, onBeforeUnmount, ref, reactive, toRefs, computed} from 'vue';
-import * as Dropzone from "dropzone";
+import {Dropzone} from "dropzone";
 import awsEndpoint from "../services/urlsigner";
-
-Dropzone.autoDiscover = false;
 
 export default {
   props: {
