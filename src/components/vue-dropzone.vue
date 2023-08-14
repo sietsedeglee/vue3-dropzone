@@ -374,7 +374,7 @@ export default {
       getQueuedFiles,
       getUploadingFiles,
       getAddedFiles,
-      getActiveFiles
+      getActiveFiles,
       manuallyAddFile,
       setOption,
       removeAllFiles,
