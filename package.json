@@ -1,15 +1,16 @@
 {
-  "name": "vue2-dropzone",
-  "description": "A wrapper around Dropzone.js for Vue 2",
+  "name": "vue3-dropzone",
+  "description": "A wrapper around Dropzone.js for Vue 3",
   "author": "rowanwins <@rowanwins>",
   "contributors": [
     "Vaibhavraj Roham <@vrajroham>",
-    "Alexander Wennerstrøm <@AlexanderYW>"
+    "Alexander Wennerstrøm <@AlexanderYW>",
+    "Sietse de Glee <sietse.deglee@calq.nl>"
   ],
   "version": "3.6.0",
   "license": "MIT",
-  "main": "./dist/vue2Dropzone.js",
-  "repository": "git@github.com:rowanwins/vue-dropzone.git",
+  "main": "./dist/vue3Dropzone.js",
+  "repository": "git@github.com:sietsedeglee/vue3-dropzone.git",
   "devDependencies": {
     "@babel/core": "^7.3.4",
     "@babel/preset-env": "^7.3.4",
@@ -36,10 +37,8 @@
     "serve": "^10.1.1",
     "uglifycss": "0.0.29",
     "uglifyjs-webpack-plugin": "^2.1.2",
-    "vue": "^2.6.8",
-    "vue-loader": "^15.7.0",
-    "vue-router": "^3.0.2",
-    "vue-style-loader": "^4.1.2",
+    "vue": "^3.3.4",
+    "vue-router": "4.2.4",
     "vue-template-compiler": "^2.6.8",
     "webpack": "^4.29.6",
     "webpack-cli": "^3.2.3",

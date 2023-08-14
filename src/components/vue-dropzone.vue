@@ -7,426 +7,382 @@
 </template>
 
 <script>
-import Dropzone from "dropzone"; //eslint-disable-line
+import {onMounted, onBeforeUnmount, ref, reactive, toRefs, computed} from 'vue';
+import * as Dropzone from "dropzone";
 import awsEndpoint from "../services/urlsigner";
 
 Dropzone.autoDiscover = false;
 
 export default {
   props: {
-    id: {
-      type: String,
-      required: true,
-      default: "dropzone"
-    },
-    options: {
-      type: Object,
-      required: true
-    },
+    id: String,
+    options: Object,
     includeStyling: {
       type: Boolean,
-      default: true,
-      required: false
+      default: true
     },
     awss3: {
       type: Object,
-      required: false,
       default: null
     },
     destroyDropzone: {
       type: Boolean,
-      default: true,
-      required: false
+      default: true
     },
     duplicateCheck: {
       type: Boolean,
-      default: false,
-      required: false
+      default: false
     },
     useCustomSlot: {
       type: Boolean,
-      default: false,
-      required: false
+      default: false
     }
   },
-  data() {
-    return {
+  setup(props, {emit}) {
+    const dropzoneElement = ref(null);
+    const dropzone = ref(null);
+
+    const state = reactive({
       isS3: false,
       isS3OverridesServerPropagation: false,
-      wasQueueAutoProcess: true
-    };
-  },
-  computed: {
-    dropzoneSettings() {
+      wasQueueAutoProcess: true,
+    });
+
+    const dropzoneSettings = computed(() => {
       let defaultValues = {
         thumbnailWidth: 200,
         thumbnailHeight: 200
       };
-      Object.keys(this.options).forEach(function(key) {
-        defaultValues[key] = this.options[key];
-      }, this);
-      if (this.awss3 !== null) {
+      Object.keys(props.options).forEach(function (key) {
+        defaultValues[key] = props.options[key];
+      });
+      if (props.awss3 !== null) {
         defaultValues["autoProcessQueue"] = false;
-        this.isS3 = true; //eslint-disable-line
-        this.isS3OverridesServerPropagation =
-          this.awss3.sendFileToServer === false; //eslint-disable-line
-        if (this.options.autoProcessQueue !== undefined)
-          this.wasQueueAutoProcess = this.options.autoProcessQueue; //eslint-disable-line
+        state.isS3 = true;
+        state.isS3OverridesServerPropagation =
+          props.awss3.sendFileToServer === false;
+        if (props.options.autoProcessQueue !== undefined)
+          state.wasQueueAutoProcess = props.options.autoProcessQueue;
 
-        if (this.isS3OverridesServerPropagation) {
+        if (state.isS3OverridesServerPropagation) {
           defaultValues["url"] = files => {
             return files[0].s3Url;
           };
         }
       }
       return defaultValues;
-    }
-  },
-  mounted() {
-    if (this.$isServer && this.hasBeenMounted) {
-      return;
-    }
-    this.hasBeenMounted = true;
-
-    this.dropzone = new Dropzone(
-      this.$refs.dropzoneElement,
-      this.dropzoneSettings
-    );
-    let vm = this;
-
-    this.dropzone.on("thumbnail", function(file, dataUrl) {
-      vm.$emit("vdropzone-thumbnail", file, dataUrl);
     });
 
-    this.dropzone.on("addedfile", function(file) {
-      var isDuplicate = false;
-      if (vm.duplicateCheck) {
-        if (this.files.length) {
-          var _i, _len;
-          for (
-            _i = 0, _len = this.files.length;
-            _i < _len - 1;
-            _i++ // -1 to exclude current file
-          ) {
+    onMounted(() => {
+      dropzone.value = new Dropzone(dropzoneElement.value, dropzoneSettings.value);
+
+      dropzone.value.on("thumbnail", (file, dataUrl) => {
+        emit("vdropzone-thumbnail", file, dataUrl);
+      });
+
+      dropzone.value.on("addedfile", (file) => {
+        let isDuplicate = false;
+        if (props.duplicateCheck && dropzone.value.files.length) {
+          for (let i = 0; i < dropzone.value.files.length - 1; i++) {
             if (
-              this.files[_i].name === file.name &&
-              this.files[_i].size === file.size &&
-              this.files[_i].lastModifiedDate.toString() ===
-                file.lastModifiedDate.toString()
+              dropzone.value.files[i].name === file.name &&
+              dropzone.value.files[i].size === file.size &&
+              dropzone.value.files[i].lastModifiedDate.toString() === file.lastModifiedDate.toString()
             ) {
-              this.removeFile(file);
+              dropzone.value.removeFile(file);
               isDuplicate = true;
-              vm.$emit("vdropzone-duplicate-file", file);
+              emit("vdropzone-duplicate-file", file);
             }
           }
         }
-      }
 
-      vm.$emit("vdropzone-file-added", file);
-      if (vm.isS3 && vm.wasQueueAutoProcess && !file.manuallyAdded) {
-        vm.getSignedAndUploadToS3(file);
-      }
-    });
-
-    this.dropzone.on("addedfiles", function(files) {
-      vm.$emit("vdropzone-files-added", files);
-    });
-
-    this.dropzone.on("removedfile", function(file) {
-      vm.$emit("vdropzone-removed-file", file);
-      if (file.manuallyAdded && vm.dropzone.options.maxFiles !== null)
-        vm.dropzone.options.maxFiles++;
-    });
-
-    this.dropzone.on("success", function(file, response) {
-      vm.$emit("vdropzone-success", file, response);
-      if (vm.isS3) {
-        if (vm.isS3OverridesServerPropagation) {
-          var xmlResponse = new window.DOMParser().parseFromString(
-            response,
-            "text/xml"
-          );
-          var s3ObjectLocation = xmlResponse.firstChild.children[0].innerHTML;
-          vm.$emit("vdropzone-s3-upload-success", s3ObjectLocation);
+        emit("vdropzone-file-added", file);
+        if (state.isS3.value && state.wasQueueAutoProcess.value && !file.manuallyAdded) {
+          getSignedAndUploadToS3(file);
         }
-        if (vm.wasQueueAutoProcess) vm.setOption("autoProcessQueue", false);
-      }
-    });
+      });
 
-    this.dropzone.on("successmultiple", function(file, response) {
-      vm.$emit("vdropzone-success-multiple", file, response);
-    });
+      dropzone.value.on("addedfiles", function (files) {
+        emit("vdropzone-files-added", files);
+      });
 
-    this.dropzone.on("error", function(file, message, xhr) {
-      vm.$emit("vdropzone-error", file, message, xhr);
-      if (this.isS3) vm.$emit("vdropzone-s3-upload-error");
-    });
+      dropzone.value.on("removedfile", function (file) {
+        emit("vdropzone-removed-file", file);
+        if (file.manuallyAdded && dropzone.options.maxFiles !== null)
+          dropzone.options.maxFiles++;
+      });
 
-    this.dropzone.on("errormultiple", function(files, message, xhr) {
-      vm.$emit("vdropzone-error-multiple", files, message, xhr);
-    });
-
-    this.dropzone.on("sending", function(file, xhr, formData) {
-      if (vm.isS3) {
-        if (vm.isS3OverridesServerPropagation) {
-          let signature = file.s3Signature;
-          Object.keys(signature).forEach(function(key) {
-            formData.append(key, signature[key]);
-          });
-        } else {
-          formData.append("s3ObjectLocation", file.s3ObjectLocation);
+      dropzone.value.on("success", function (file, response) {
+        emit("vdropzone-success", file, response);
+        if (state.isS3.value) {
+          if (state.isS3OverridesServerPropagation.value) {
+            var xmlResponse = new window.DOMParser().parseFromString(
+              response,
+              "text/xml"
+            );
+            var s3ObjectLocation = xmlResponse.firstChild.children[0].innerHTML;
+            emit("vdropzone-s3-upload-success", s3ObjectLocation);
+          }
+          if (state.wasQueueAutoProcess.value) setOption("autoProcessQueue", false);
         }
-      }
-      vm.$emit("vdropzone-sending", file, xhr, formData);
-    });
+      });
 
-    this.dropzone.on("sendingmultiple", function(file, xhr, formData) {
-      vm.$emit("vdropzone-sending-multiple", file, xhr, formData);
-    });
+      dropzone.value.on("successmultiple", function (file, response) {
+        emit("vdropzone-success-multiple", file, response);
+      });
 
-    this.dropzone.on("complete", function(file) {
-      vm.$emit("vdropzone-complete", file);
-    });
+      dropzone.value.on("error", function (file, message, xhr) {
+        emit("vdropzone-error", file, message, xhr);
+        if (state.isS3) emit("vdropzone-s3-upload-error");
+      });
 
-    this.dropzone.on("completemultiple", function(files) {
-      vm.$emit("vdropzone-complete-multiple", files);
-    });
+      dropzone.value.on("errormultiple", function (files, message, xhr) {
+        emit("vdropzone-error-multiple", files, message, xhr);
+      });
 
-    this.dropzone.on("canceled", function(file) {
-      vm.$emit("vdropzone-canceled", file);
-    });
+      dropzone.value.on("sending", function (file, xhr, formData) {
+        if (state.isS3.value) {
+          if (state.isS3OverridesServerPropagation.value) {
+            let signature = file.s3Signature;
+            Object.keys(signature).forEach(function (key) {
+              formData.append(key, signature[key]);
+            });
+          } else {
+            formData.append("s3ObjectLocation", file.s3ObjectLocation);
+          }
+        }
+        emit("vdropzone-sending", file, xhr, formData);
+      });
 
-    this.dropzone.on("canceledmultiple", function(files) {
-      vm.$emit("vdropzone-canceled-multiple", files);
-    });
-
-    this.dropzone.on("maxfilesreached", function(files) {
-      vm.$emit("vdropzone-max-files-reached", files);
-    });
-
-    this.dropzone.on("maxfilesexceeded", function(file) {
-      vm.$emit("vdropzone-max-files-exceeded", file);
-    });
-
-    this.dropzone.on("processing", function(file) {
-      vm.$emit("vdropzone-processing", file);
-    });
-
-    this.dropzone.on("processingmultiple", function(files) {
-      vm.$emit("vdropzone-processing-multiple", files);
-    });
-
-    this.dropzone.on("uploadprogress", function(file, progress, bytesSent) {
-      vm.$emit("vdropzone-upload-progress", file, progress, bytesSent);
-    });
-
-    this.dropzone.on("totaluploadprogress", function(
-      totaluploadprogress,
-      totalBytes,
-      totalBytesSent
-    ) {
-      vm.$emit(
-        "vdropzone-total-upload-progress",
+      dropzone.value.on("totaluploadprogress", function (
         totaluploadprogress,
         totalBytes,
         totalBytesSent
-      );
-    });
-
-    this.dropzone.on("reset", function() {
-      vm.$emit("vdropzone-reset");
-    });
-
-    this.dropzone.on("queuecomplete", function() {
-      vm.$emit("vdropzone-queue-complete");
-    });
-
-    this.dropzone.on("drop", function(event) {
-      vm.$emit("vdropzone-drop", event);
-    });
-
-    this.dropzone.on("dragstart", function(event) {
-      vm.$emit("vdropzone-drag-start", event);
-    });
-
-    this.dropzone.on("dragend", function(event) {
-      vm.$emit("vdropzone-drag-end", event);
-    });
-
-    this.dropzone.on("dragenter", function(event) {
-      vm.$emit("vdropzone-drag-enter", event);
-    });
-
-    this.dropzone.on("dragover", function(event) {
-      vm.$emit("vdropzone-drag-over", event);
-    });
-
-    this.dropzone.on("dragleave", function(event) {
-      vm.$emit("vdropzone-drag-leave", event);
-    });
-
-    vm.$emit("vdropzone-mounted");
-  },
-  beforeDestroy() {
-    if (this.destroyDropzone) this.dropzone.destroy();
-  },
-  methods: {
-    manuallyAddFile: function(file, fileUrl) {
-      file.manuallyAdded = true;
-      this.dropzone.emit("addedfile", file);
-      let containsImageFileType = false;
-      if (
-        fileUrl.indexOf(".svg") > -1 ||
-        fileUrl.indexOf(".png") > -1 ||
-        fileUrl.indexOf(".jpg") > -1 ||
-        fileUrl.indexOf(".jpeg") > -1 ||
-        fileUrl.indexOf(".gif") > -1 ||
-        fileUrl.indexOf(".webp") > -1
-      )
-        containsImageFileType = true;
-      if (
-        this.dropzone.options.createImageThumbnails &&
-        containsImageFileType &&
-        file.size <= this.dropzone.options.maxThumbnailFilesize * 1024 * 1024
       ) {
-        fileUrl && this.dropzone.emit("thumbnail", file, fileUrl);
-
-        var thumbnails = file.previewElement.querySelectorAll(
-          "[data-dz-thumbnail]"
+        emit(
+          "vdropzone-total-upload-progress",
+          totaluploadprogress,
+          totalBytes,
+          totalBytesSent
         );
-        for (var i = 0; i < thumbnails.length; i++) {
-          thumbnails[i].style.width =
-            this.dropzoneSettings.thumbnailWidth + "px";
-          thumbnails[i].style.height =
-            this.dropzoneSettings.thumbnailHeight + "px";
-          thumbnails[i].style["object-fit"] = "contain";
-        }
+      });
+
+      dropzone.value.on("sendingmultiple", function (file, xhr, formData) {
+        emit("vdropzone-sending-multiple", file, xhr, formData);
+      });
+
+      dropzone.value.on("complete", function (file) {
+        emit("vdropzone-complete", file);
+      });
+
+      dropzone.value.on("completemultiple", function (files) {
+        emit("vdropzone-complete-multiple", files);
+      });
+
+      dropzone.value.on("canceled", function (file) {
+        emit("vdropzone-canceled", file);
+      });
+
+      dropzone.value.on("canceledmultiple", function (files) {
+        emit("vdropzone-canceled-multiple", files);
+      });
+
+      dropzone.value.on("maxfilesreached", function (files) {
+        emit("vdropzone-max-files-reached", files);
+      });
+
+      dropzone.value.on("maxfilesexceeded", function (file) {
+        emit("vdropzone-max-files-exceeded", file);
+      });
+
+      dropzone.value.on("processing", function (file) {
+        emit("vdropzone-processing", file);
+      });
+
+      dropzone.value.on("processingmultiple", function (files) {
+        emit("vdropzone-processing-multiple", files);
+      });
+
+      dropzone.value.on("uploadprogress", function (file, progress, bytesSent) {
+        emit("vdropzone-upload-progress", file, progress, bytesSent);
+      });
+
+      dropzone.value.on("reset", (event) => {
+        emit("vdropzone-reset", event);
+      });
+
+      dropzone.value.on("queuecomplete", (event) => {
+        emit("vdropzone-queue-complete", event);
+      });
+
+      dropzone.value.on("drop", (event) => {
+        emit("vdropzone-drop", event);
+      });
+
+      dropzone.value.on("dragstart", (event) => {
+        emit("vdropzone-drag-start", event);
+      });
+
+      dropzone.value.on("dragend", (event) => {
+        emit("vdropzone-drag-end", event);
+      });
+
+      dropzone.value.on("dragenter", (event) => {
+        emit("vdropzone-drag-enter", event);
+      });
+
+      dropzone.value.on("dragleave", (event) => {
+        emit("vdropzone-drag-leave", event);
+      });
+
+      emit("vdropzone-mounted");
+    });
+
+    onBeforeUnmount(() => {
+      if (props.destroyDropzone) {
+        dropzone.value.destroy();
       }
-      this.dropzone.emit("complete", file);
-      if (this.dropzone.options.maxFiles) this.dropzone.options.maxFiles--;
-      this.dropzone.files.push(file);
-      this.$emit("vdropzone-file-added-manually", file);
-    },
-    setOption: function(option, value) {
-      this.dropzone.options[option] = value;
-    },
-    removeAllFiles: function(bool) {
-      this.dropzone.removeAllFiles(bool);
-    },
-    processQueue: function() {
-      let dropzoneEle = this.dropzone;
-      if (this.isS3 && !this.wasQueueAutoProcess) {
-        this.getQueuedFiles().forEach(file => {
-          this.getSignedAndUploadToS3(file);
+    });
+
+    const manuallyAddFile = (file, fileUrl) => {
+      file.manuallyAdded = true;
+      dropzone.value.emit("addedfile", file);
+      const containsImageFileType = [".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"].some(ext => fileUrl.includes(ext));
+
+      if (
+        dropzone.value.options.createImageThumbnails &&
+        containsImageFileType &&
+        file.size <= dropzone.value.options.maxThumbnailFilesize * 1024 * 1024
+      ) {
+        if (fileUrl) dropzone.value.emit("thumbnail", file, fileUrl);
+
+        const thumbnails = file.previewElement.querySelectorAll("[data-dz-thumbnail]");
+        thumbnails.forEach(thumbnail => {
+          thumbnail.style.width = dropzoneSettings.value.thumbnailWidth + "px";
+          thumbnail.style.height = dropzoneSettings.value.thumbnailHeight + "px";
+          thumbnail.style["object-fit"] = "contain";
+        });
+      }
+      dropzone.value.emit("complete", file);
+      if (dropzone.value.options.maxFiles) dropzone.value.options.maxFiles--;
+      dropzone.value.files.push(file);
+      emit("vdropzone-file-added-manually", file);
+    };
+
+    const setOption = (option, value) => {
+      dropzone.value.options[option] = value;
+    };
+
+    const removeAllFiles = (bool) => {
+      dropzone.value.removeAllFiles(bool);
+    };
+
+    const processQueue = () => {
+      if (state.isS3.value && !state.wasQueueAutoProcess.value) {
+        getQueuedFiles().forEach(file => {
+          getSignedAndUploadToS3(file);
         });
       } else {
-        this.dropzone.processQueue();
+        dropzone.value.processQueue();
       }
-      this.dropzone.on("success", function() {
-        dropzoneEle.options.autoProcessQueue = true;
+
+      dropzone.value.on("success", function () {
+        dropzone.value.options.autoProcessQueue = true;
       });
-      this.dropzone.on("queuecomplete", function() {
-        dropzoneEle.options.autoProcessQueue = false;
+
+      dropzone.value.on("queuecomplete", function () {
+        dropzone.value.options.autoProcessQueue = false;
       });
-    },
-    init: function() {
-      return this.dropzone.init();
-    },
-    destroy: function() {
-      return this.dropzone.destroy();
-    },
-    updateTotalUploadProgress: function() {
-      return this.dropzone.updateTotalUploadProgress();
-    },
-    getFallbackForm: function() {
-      return this.dropzone.getFallbackForm();
-    },
-    getExistingFallback: function() {
-      return this.dropzone.getExistingFallback();
-    },
-    setupEventListeners: function() {
-      return this.dropzone.setupEventListeners();
-    },
-    removeEventListeners: function() {
-      return this.dropzone.removeEventListeners();
-    },
-    disable: function() {
-      return this.dropzone.disable();
-    },
-    enable: function() {
-      return this.dropzone.enable();
-    },
-    filesize: function(size) {
-      return this.dropzone.filesize(size);
-    },
-    accept: function(file, done) {
-      return this.dropzone.accept(file, done);
-    },
-    addFile: function(file) {
-      return this.dropzone.addFile(file);
-    },
-    removeFile: function(file) {
-      this.dropzone.removeFile(file);
-    },
-    getAcceptedFiles: function() {
-      return this.dropzone.getAcceptedFiles();
-    },
-    getRejectedFiles: function() {
-      return this.dropzone.getRejectedFiles();
-    },
-    getFilesWithStatus: function() {
-      return this.dropzone.getFilesWithStatus();
-    },
-    getQueuedFiles: function() {
-      return this.dropzone.getQueuedFiles();
-    },
-    getUploadingFiles: function() {
-      return this.dropzone.getUploadingFiles();
-    },
-    getAddedFiles: function() {
-      return this.dropzone.getAddedFiles();
-    },
-    getActiveFiles: function() {
-      return this.dropzone.getActiveFiles();
-    },
-    getSignedAndUploadToS3(file) {
-      var promise = awsEndpoint.sendFile(
+    };
+
+    const init = () => dropzone.value.init();
+    const destroy = () => dropzone.value.destroy();
+    const updateTotalUploadProgress = () => dropzone.value.updateTotalUploadProgress();
+    const getFallbackForm = () => dropzone.value.getFallbackForm();
+    const getExistingFallback = () => dropzone.value.getExistingFallback();
+    const setupEventListeners = () => dropzone.value.setupEventListeners();
+    const removeEventListeners = () => dropzone.value.removeEventListeners();
+    const disable = () => dropzone.value.disable();
+    const enable = () => dropzone.value.enable();
+    const filesize = (size) => dropzone.value.filesize(size);
+    const accept = (file, done) => dropzone.value.accept(file, done);
+    const addFile = (file) => dropzone.value.addFile(file);
+    const removeFile = (file) => dropzone.value.removeFile(file);
+    const getAcceptedFiles = () => dropzone.value.getAcceptedFiles();
+    const getRejectedFiles = () => dropzone.value.getRejectedFiles();
+    const getFilesWithStatus = () => dropzone.value.getFilesWithStatus();
+    const getQueuedFiles = () => dropzone.value.getQueuedFiles();
+    const getUploadingFiles = () => dropzone.value.getUploadingFiles();
+    const getAddedFiles = () => dropzone.value.getAddedFiles();
+    const getActiveFiles = () => dropzone.value.getActiveFiles();
+
+    const getSignedAndUploadToS3 = (file) => {
+      const promise = awsEndpoint.sendFile(
         file,
-        this.awss3,
-        this.isS3OverridesServerPropagation
+        state.awss3.value,
+        state.isS3OverridesServerPropagation.value
       );
-      if (!this.isS3OverridesServerPropagation) {
+
+      if (!state.isS3OverridesServerPropagation.value) {
         promise.then(response => {
           if (response.success) {
             file.s3ObjectLocation = response.message;
-            setTimeout(() => this.dropzone.processFile(file));
-            this.$emit("vdropzone-s3-upload-success", response.message);
+            setTimeout(() => dropzone.value.processFile(file));
+            emit("vdropzone-s3-upload-success", response.message);
           } else {
-            if ("undefined" !== typeof response.message) {
-              this.$emit("vdropzone-s3-upload-error", response.message);
-            } else {
-              this.$emit(
-                "vdropzone-s3-upload-error",
-                "Network Error : Could not send request to AWS. (Maybe CORS error)"
-              );
-            }
+            const errorMessage = response.message || "Network Error : Could not send request to AWS. (Maybe CORS error)";
+            emit("vdropzone-s3-upload-error", errorMessage);
           }
         });
       } else {
         promise.then(() => {
-          setTimeout(() => this.dropzone.processFile(file));
+          setTimeout(() => dropzone.value.processFile(file));
         });
       }
+
       promise.catch(error => {
         alert(error);
       });
-    },
-    setAWSSigningURL(location) {
-      if (this.isS3) {
-        this.awss3.signingURL = location;
+    };
+
+    const setAWSSigningURL = (location) => {
+      if (state.isS3.value) {
+        state.awss3.value.signingURL = location;
       }
-    }
-  }
+    };
+
+    return {
+      ...toRefs(state),
+      dropzoneElement,
+      dropzone,
+      init,
+      destroy,
+      updateTotalUploadProgress,
+      getFallbackForm,
+      getExistingFallback,
+      setupEventListeners,
+      removeEventListeners,
+      disable,
+      enable,
+      filesize,
+      accept,
+      addFile,
+      removeFile,
+      getAcceptedFiles,
+      getRejectedFiles,
+      getFilesWithStatus,
+      getQueuedFiles,
+      getUploadingFiles,
+      getAddedFiles,
+      getActiveFiles
+      manuallyAddFile,
+      setOption,
+      removeAllFiles,
+      processQueue,
+      getSignedAndUploadToS3,
+      setAWSSigningURL,
+    };
+  },
 };
 </script>
 
