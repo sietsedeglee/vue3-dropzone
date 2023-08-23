@@ -469,29 +469,6 @@ export default {
   opacity: 1;
 }
 
-.vue-dropzone > .dz-preview .dz-success-mark,
-.vue-dropzone > .dz-preview .dz-error-mark {
-  margin-left: auto;
-  margin-top: auto;
-  width: 100%;
-  top: 35%;
-  left: 0;
-}
-
-.vue-dropzone > .dz-preview .dz-success-mark svg,
-.vue-dropzone > .dz-preview .dz-error-mark svg {
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.vue-dropzone > .dz-preview .dz-error-message {
-  margin-left: auto;
-  margin-right: auto;
-  left: 0;
-  width: 100%;
-  text-align: center;
-}
-
 .vue-dropzone > .dz-preview .dz-error-message:after {
   display: none;
 }
